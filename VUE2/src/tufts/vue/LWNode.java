@@ -73,7 +73,7 @@ Okay, this issue with getting rid of auto-sized is this:
     So now we just need to detect older nodes that won't have a text size
     encoded.  So if there's no text size encoded, I guess it's an older
     node :)  In that case, we size the text-box to it's preferred
-    width, as opposed to it's minimum width, and fit the node to that
+    width, as opposb                                                       ed to it's minimum width, and fit the node to that
     (if it's autosized).  If it's not auto-sized ... (what?)
 
 
@@ -1171,7 +1171,8 @@ public class LWNode extends LWContainer
         // layoutBoxed, if anything else, we use layoutCeneter
         //-------------------------------------------------------
 
-        final Size min;
+        Size min;
+        Size fittedSize;
 
 //         if (isRectShape) {
 //             isCenterLayout = false;
@@ -1196,14 +1197,14 @@ public class LWNode extends LWContainer
         if (isCenterLayout) {
             if (request == null)
                 request = curSize;
-            min = layoutCentered(request);
+            fittedSize = layoutCentered(request, min = new Size());
         } else {
-            min = layoutBoxed(request, curSize, triggerKey);
+        	fittedSize = layoutBoxed(request, curSize, triggerKey);
+        	min = new Size(fittedSize);
             if (request == null)
                 request = curSize;
         }
         
-
         mMinSize = new Size(min);
 
         if (DEBUG.LAYOUT) out("*** layout computed minimum=" + min);
@@ -1223,14 +1224,21 @@ public class LWNode extends LWContainer
             // we always compute the minimum size, and
             // never let us get smaller than that -- so
             // only use given size if bigger than min size.
-            if (request.width > min.width)
-                newWidth = request.width;
-            else
-                newWidth = min.width;
-            if (request.height > min.height)
-                newHeight = request.height;
-            else
-                newHeight = min.height;
+        	
+        	if (isCenterLayout) {
+            	newWidth = fittedSize.width;
+            	newHeight = fittedSize.height;
+        		
+        	} else {
+	            if (request.width > min.width)
+	                newWidth = request.width;
+	            else
+	                newWidth = min.width;
+	            if (request.height > min.height)
+	                newHeight = request.height;
+	            else
+	                newHeight = min.height;
+        	}
         }
 
         setSizeNoLayout(newWidth, newHeight);
@@ -1301,10 +1309,9 @@ public class LWNode extends LWContainer
      * @return the minimum rectangular size of node shape required to to contain all
      * the visual node contents
      */
-    private Size layoutCentered(Size request)
+    private Size layoutCentered(Size request, Size minSize)
     {
         NodeContent content = getLaidOutNodeContent();
-        Size minSize = new Size(content);
         Size node = new Size(content);
 
         // Current node size is largest of current size, or
@@ -1320,18 +1327,23 @@ public class LWNode extends LWContainer
         //content.height = minSize.height;
 
         RectangularShape nodeShape = (RectangularShape) mShape.clone();
-        nodeShape.setFrame(0,0, content.width, content.height);
+        //nodeShape.setFrame(0,0, content.width, content.height);
         //nodeShape.setFrame(0,0, minSize.width, minSize.height);
         
         // todo perf: allow for skipping of searching for minimum size
         // if current size already big enough for content
 
         // todo: we shouldn't even by trying do a layout if have no children or label...
-        if ((hasLabel() || hasChildren()) && growShapeUntilContainsContent(nodeShape, content)) {
+        if ((hasLabel() || hasChildren()) && growShapeUntilContainsContent(nodeShape, content, new Size(0,0))) {
             // content x/y is now at the center location of our MINUMUM size,
             // even tho our current size may be bigger and require moving it..
             minSize.fit(nodeShape);
-            node.fit(minSize);
+            
+            //get size of shape at requested size.
+            if (!isAutoSized()){
+            	growShapeUntilContainsContent(nodeShape, content, request);
+            }
+            node.fit(nodeShape);
         }
 
         //Size text = getTextSize();
@@ -1344,7 +1356,7 @@ public class LWNode extends LWContainer
 
         content.layoutTargets();
         
-        return minSize;
+        return node;
     }
 
     /**
@@ -1358,69 +1370,139 @@ public class LWNode extends LWContainer
      * @param content - the rectangle to ensure we can contain (x/y is ignored: it's x/y value at end will be centered)
      * @return true if the shape was grown
      */
-    private boolean growShapeUntilContainsContent(RectangularShape shape, NodeContent content)
-    {
-        final int MaxTries = 1000; // in case of loops (e.g., a broke shape class whose contains() never succeeds)
-        final float increment;
-        if (content.width > content.height)
-            increment = content.width * 0.1f;
-        else
-            increment = content.height * 0.1f;
-        final float xinc = increment;
-        final float yinc = increment;
-        //final float xinc = content.width * 0.1f;
-        //final float yinc = (content.height / content.width) * xinc;
-        //System.out.println("xinc=" + xinc + " yinc=" + yinc);
-        int tries = 0;
-        while (!shape.contains(content) && tries < MaxTries) {
-        //while (!content.fitsInside(shape) && tries < MaxTries) {
-            shape.setFrame(0, 0, shape.getWidth() + xinc, shape.getHeight() + yinc);
-            //System.out.println("trying size " + shape + " for content " + content);
-            layoutContentInShape(shape, content);
-            tries++;
-        }
-        if (tries > 0) {
-            final float shrink = 1f;
-            if (DEBUG.LAYOUT) System.out.println("Contents of " + shape + "  rought  fit  to " + content + " in " + tries + " tries");
-            do {
-                shape.setFrame(0, 0, shape.getWidth() - shrink, shape.getHeight() - shrink);
-                //System.out.println("trying size " + shape + " for content " + content);
-                layoutContentInShape(shape, content);
-                tries++;
-                //} while (shape.contains(content) && tries < MaxTries);
-            } while (content.fitsInside(shape) && tries < MaxTries);
-            shape.setFrame(0, 0, shape.getWidth() + shrink, shape.getHeight() + shrink);
-            //layoutContentInShape(shape, content);
+  	private boolean growShapeUntilContainsContent(RectangularShape shape, NodeContent content, Size requestedSize) {
+		final int MaxTries = 1000; // in case of loops (e.g., a broke shape
+									// class whose contains() never succeeds)
+		final double increment;
+		 double newHeight = shape.getHeight();
+		 double newWidth = shape.getWidth();
+		
+		 if (requestedSize.width > content.width) {
+			 newWidth = requestedSize.width;
+		 }
+		 if (requestedSize.height > content.width) {
+			 newHeight = requestedSize.height;
+		 }
+		
+		 shape.setFrame(0,0, newWidth, newHeight);
+		 
+		if (content.width > content.height)
+			increment = content.width * 0.1d;
+		else
+			increment = content.height * 0.1d;
+		
+		double xinc = increment;
+		double yinc = increment;
 
-            /*
-            if (getLabel().indexOf("*s") >= 0) {
-            do {
-                shape.setFrame(0, 0, shape.getWidth(), shape.getHeight() - shrink);
-                tries++;
-            } while (content.fitsInside(shape) && tries < MaxTries);
-            shape.setFrame(0, 0, shape.getWidth(), shape.getHeight() + shrink);
-            }
+		// final float xinc = content.width * 0.1f;
+		// final float yinc = (content.height / content.width) * xinc;
+		// System.out.println("xinc=" + xinc + " yinc=" + yinc);
+		int tries = 0;
+		
+		// Grow shape to contain content.
+		while (!shape.contains(content) && ++tries < MaxTries) {
+			// while (!content.fitsInside(shape) && tries < MaxTries) {
+			if (DEBUG.LAYOUT)
+				out("Growing size " + shape + "by " + xinc + "," + yinc + " for content " + content);
+			shape.setFrame(0, 0, shape.getWidth() + xinc, shape.getHeight()	+ yinc);
+			layoutContentInShape(shape, content);
+		}
 
-            if (getLabel().indexOf("*ml") >= 0) {
-            do {
-                shape.setFrame(0, 0, shape.getWidth(), shape.getHeight() - shrink);
-                tries++;
-            } while (content.fitsInside(shape) && tries < MaxTries);
-            shape.setFrame(0, 0, shape.getWidth(), shape.getHeight() + shrink);
-            }
-            */
-            
-        }
-        
-        if (tries >= MaxTries) {
-            Log.error("Contents of " + shape + " failed to contain " + content + " after " + tries + " tries.");
-        } else if (tries > 0) {
-            if (DEBUG.LAYOUT) System.out.println("Contents of " + shape + " grown to contain " + content + " in " + tries + " tries");
-        } else
-            if (DEBUG.LAYOUT) System.out.println("Contents of " + shape + " already contains " + content);
-        if (DEBUG.LAYOUT) out("*** content minput at " + content + " in " + shape);
-        return tries > 0;
-    }
+		// If the shape changed size trim it back to fit content.
+		if (tries > 0) {
+
+			if (DEBUG.LAYOUT)
+				out("Contents of " + shape + "  rought  fit  to " + content	+ " in " + tries + " tries");
+
+			int widthTries=0;
+			int heightTries=0;
+			double shrink = increment;
+
+			// tighten shape
+			// reduce size on both dimensions
+			
+			while (shrink >= 1 && tries < MaxTries) {
+				while (shape.contains(content) && tries < MaxTries &&
+						shape.getWidth() >= requestedSize.width &&
+						shape.getHeight() >= requestedSize.height) {
+					shape.setFrame(0, 0, shape.getWidth() - shrink, shape.getHeight() - shrink);
+					layoutContentInShape(shape, content);
+					tries++;
+				}
+				if (tries > 0 ) {
+					shape.setFrame(0, 0, shape.getWidth() + shrink, shape.getHeight() + shrink);
+					layoutContentInShape(shape, content);
+				}
+				shrink /= 2.0;
+			}
+		
+			// Trim each dimension individually.  This tights the shape down properly when the 
+			// shape is autosized.
+			heightTries = shrinkHeight(shape, content, yinc, requestedSize.height);
+			widthTries = shrinkWidth(shape, content, xinc, requestedSize.width);
+			tries += widthTries + heightTries;
+		}
+
+		if (tries >= MaxTries) {
+			Log.error("Contents of " + shape + " failed to contain " + content
+					+ " after " + tries + " tries.");
+		} else if (tries > 0) {
+			if (DEBUG.LAYOUT)
+				out("Contents of " + shape + " grown to contain " + content
+						+ " in " + tries + " tries");
+		} else {
+			if (DEBUG.LAYOUT)
+				out("Contents of " + shape + " already contains " + content);
+		}
+		if (DEBUG.LAYOUT)
+			out("*** content minput at " + content + " in " + shape);
+		return tries > 0;
+	}
+	
+	private int shrinkHeight(RectangularShape shape, NodeContent content, double iniShrink, float requestedHeight) {
+		int tries = 0;
+		final int MaxTries = 500;
+		double shrink = iniShrink;
+		
+		while (shrink >= 1 && tries < MaxTries) {
+			while (shape.contains(content) && tries < MaxTries && shape.getHeight() >= requestedHeight) {
+				if (DEBUG.LAYOUT)
+					out("Shrinking height " + shape + "by " + shrink +  " for content " + content);
+				shape.setFrame(0, 0, shape.getWidth(), shape.getHeight() - shrink);
+				layoutContentInShape(shape, content);
+				tries++;
+			}
+			if (tries > 0 ) {
+				shape.setFrame(0, 0, shape.getWidth() , shape.getHeight() + shrink);
+				layoutContentInShape(shape, content);
+			}
+			shrink /= 2.0;
+		}
+		return tries;
+	}
+
+	private int shrinkWidth(RectangularShape shape, NodeContent content, double iniShrink, float requestedWidth) {
+		int tries = 0;
+		final int MaxTries = 500;
+		double shrink = iniShrink;
+
+		while (shrink >= 1 && tries < MaxTries) {
+			while (shape.contains(content) && tries < MaxTries && shape.getWidth() >= requestedWidth) {
+				if (DEBUG.LAYOUT)
+					out("Shrinking width " + shape + "by " + shrink +  " for content " + content);
+				shape.setFrame(0, 0, shape.getWidth() - shrink,	shape.getHeight());
+				layoutContentInShape(shape, content);
+				tries++;
+			}
+			if (tries > 0) {
+				shape.setFrame(0, 0, shape.getWidth() + shrink, shape.getHeight());
+				layoutContentInShape(shape, content);
+			}
+			shrink /= 2.0;
+		}
+		return tries;
+	}
+  
     
     /**
      * Layout the given content rectangle in the given shape.  The default is to center
@@ -1444,14 +1526,16 @@ public class LWNode extends LWContainer
             int gravity = ((RectangularPoly2D)shape).getContentGravity();
             content_laid_out = true;
             if (gravity == RectangularPoly2D.CENTER) {
-                content.x = (shapeWidth - content.width) / 2;
-                content.y = (shapeHeight - content.height) / 2;
+            	content.x = (float) (shape.getCenterX() - (content.width / 2));
+//                content.x = (shapeWidth - content.width) / 2;
+            	content.y = (float) (shape.getCenterY() - (content.height / 2));
+//                content.y = (shapeHeight - content.height) / 2;
             } else if (gravity == RectangularPoly2D.WEST) {
                 content.x = margin;
-                content.y = (float) (shapeHeight - content.height) / 2;
+                content.y = (shapeHeight - content.height) / 2;
             } else if (gravity == RectangularPoly2D.EAST) {
-                content.x = (shapeWidth - content.width) - margin;
-                content.y = (float) Math.floor((shapeHeight - content.height) / 2);
+                content.x = shapeWidth - content.width - margin;
+                content.y = (shapeHeight - content.height) / 2;
             } else if (gravity == RectangularPoly2D.NORTH) {
                 content.x = (shapeWidth  - content.width) / 2;
                 content.y = margin;
@@ -1520,7 +1604,7 @@ public class LWNode extends LWContainer
                 rChildren = new Rectangle2D.Float(childx,childy, children.width, children.height);
 
                 // can set absolute height based on label height & children height
-                this.height = rLabel.height + ChildPadY + children.height;
+                this.height = rLabel.height + ChildPadY + children.height + ChildrenPadBottom;
 
                 // make sure we're wide enough for the children in case children wider than label
                 fitWidth(rLabel.x + children.width); // as we're 0 based, rLabel.x == width of gap at left of children
@@ -2070,8 +2154,11 @@ public class LWNode extends LWContainer
 //         else
         if (hasFlag(Flag.SLIDE_STYLE) && mAlignment.get() != Alignment.LEFT && isImageNode(this))
             layoutChildrenColumnAligned(baseX, baseY, result);
-        else
-            layoutChildrenSingleColumn(baseX, baseY, result);
+        else if (isChildrenLayoutColumn) {
+        	result = layoutChildrenSingleColumn(baseX, baseY);
+        } else {
+        	result = layoutChildrenSingleRow(baseX, baseY);
+        }
 
 //         if (result != null) {
 //             //if (DEBUG.BOXES)
@@ -2123,11 +2210,12 @@ public class LWNode extends LWContainer
         }
     }
 
-    protected void layoutChildrenSingleColumn(float baseX, float baseY, Size result)
+    protected Size layoutChildrenSingleColumn(float baseX, float baseY)
     {
         float y = baseY;
         float maxWidth = 0;
         boolean first = true;
+        float w = 0.0f;
 
         for (LWComponent c : getChildren()) {
             if (c instanceof LWLink) // todo: don't allow adding of links into a manged layout node!
@@ -2141,19 +2229,51 @@ public class LWNode extends LWContainer
             c.setLocation(baseX, y);
             y += c.getLocalHeight();
 
-            if (result != null) {
-                // track max width
-                float w = c.getLocalBorderWidth();
-                if (w > maxWidth)
-                    maxWidth = w;
-            }
+            // track max width
+           w = c.getLocalBorderWidth();
+            if (w > maxWidth)
+                 maxWidth = w;
         }
 
-        if (result != null) {
-            result.width = maxWidth;
-            result.height = (y - baseY);
-        }
+        return new Size(maxWidth, (y-baseY));
     }
+
+    /**
+     * This lays out children into a single row.
+     * @param baseX - relative x position within the parent
+     * @param baseY - relative y position within the parent
+     * @param result - can be null.  If passed it is updated with the Size of the rectangle enclosing the children.
+     * @return void
+     */
+    protected Size layoutChildrenSingleRow(double baseX, double baseY) {
+        double newX = baseX;
+        double newY = baseY;
+        double maxHeight = 0;
+        boolean first = true;
+        
+        for (LWComponent c : getChildren()) {
+            if (c instanceof LWLink) // todo: don't allow adding of links into a
+                                        // manged layout node!
+                continue;
+            if (c.isHidden())
+                continue;
+            if (first) {
+                first = false;
+            } else {
+                newX += ChildHorizontalGap * getScale();
+            }
+
+            c.setLocation(newX, baseY);
+
+            newX += c.getLocalWidth();
+
+            // track max height
+            double h = c.getLocalHeight();
+            if (h > maxHeight)
+                maxHeight = h;
+        }
+        return new Size((newX - baseX), (maxHeight));
+     }
     
     class Column extends java.util.ArrayList<LWComponent>
     {
