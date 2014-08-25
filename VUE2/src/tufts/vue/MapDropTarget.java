@@ -667,7 +667,13 @@ public class MapDropTarget
         // before we bother to scan for these.
 
         final DataFlavor[] dataFlavors = transfer.getTransferDataFlavors();
-        final DataFlavor URLFlavor = findFlavor(dataFlavors, "application/x-java-url", java.net.URL.class);
+        //final DataFlavor URLFlavor = findFlavor(dataFlavors, "application/x-java-url", java.net.URL.class);
+        //jm trying to get URL's working on fedora
+        DataFlavor URLFlavor = findFlavor(dataFlavors, "application/x-java-url", java.net.URL.class);
+//        if (URLFlavor == null) {
+//        		URLFlavor = findFlavor (dataFlavors, "text/uri-list", java.lang.String.class);
+//        }
+
         final DataFlavor HTMLTextFlavor = findFlavor(dataFlavors, "text/html", java.lang.String.class);
 
 //         DataFlavor URLDataFlavor = null;
@@ -1601,7 +1607,8 @@ public class MapDropTarget
     private DataFlavor findFlavor(DataFlavor[] dataFlavors, String mimeType, Class repClass)
     {
         for (DataFlavor flavor : dataFlavors) {
-            //System.out.println("MT " + Util.tags(flavor.getMimeType()) + " REPCLASS " + Util.tags(flavor.getRepresentationClass()));
+        	//jm
+            System.out.println("MT " + Util.tags(flavor.getMimeType()) + " REPCLASS " + Util.tags(flavor.getRepresentationClass()));
             if (flavor.isMimeTypeEqual(mimeType) && flavor.getRepresentationClass() == repClass)
                 return flavor;
         }

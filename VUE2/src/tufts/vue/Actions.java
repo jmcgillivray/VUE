@@ -711,26 +711,39 @@ public class Actions implements VueConstants
         };
     
         public static final Action ResizeNode =
-            new LWCAction(VueResources.local("menu.format.node.resize")/*, VueResources.getIcon("outlineIcon.link")*/) {
+            new LWCAction(VueResources.local("menu.format.node.resize"), keyStroke(KeyEvent.VK_R, ALT+SHIFT)/*, VueResources.getIcon("outlineIcon.link")*/) {
                 boolean enabledFor(LWSelection s) { 
                 
                 	
-                	
-                	if (s.size()==1 && s.containsType(LWNode.class))
-                	{
-                		LWNode n = (LWNode)s.get(0);
-                		Size minSize = n.getMinimumSize();
-                		
-                		if (minSize.height == n.height && minSize.width == n.width)
-                			return false;
-                		else
-                			return true;
-
-                	}
-                	else 
+                	// jm 2011-09-11 Remove constraint around selection size so that all LWNode's can be reset back to original size
+//                	if (s.size()==1 && s.containsType(LWNode.class))
+//                	{
+//                		LWNode n = (LWNode)s.get(0);
+//                		Size minSize = n.getMinimumSize();
+//                		
+//                		if (minSize.height == n.height && minSize.width == n.width)
+//                			return false;
+//                		else
+//                			return true;
+//
+//                	}
+//                	else 
+//                		return false;
+//                	}
+                	if (s.size()>=1 ) {
+                		for (LWComponent c : s) {
+                			if (!(c instanceof LWNode)) {
+                				return false;
+                			}
+                		}
+                		return true;
+                	} else {
                 		return false;
                 	}
-                public void act(LWNode c) { c.setToNaturalSize();}
+                }
+                public void act(LWNode c) {
+                	c.setToNaturalSize();
+                }
             };    
     
     /** Helper for menu creation.  Null's indicate good places
@@ -2077,6 +2090,25 @@ public class Actions implements VueConstants
     };
     
     //-------------------------------------------------------
+    // jm 2011-06-18 - node children layout
+    // This is a cheap and nasty, should really create node layout manager.
+    //-------------------------------------------------------
+    public static final LWCAction layoutChildrenColumn =
+        new LWCAction(VueResources.local("menu.format.arrange.childrenvertical")) {
+            void act(LWSelection selection) { 
+            	LWContainer.layoutChildrenColumn(selection);
+            }
+        };
+        
+    public static final LWCAction layoutChildrenRow =
+        new LWCAction(VueResources.local("menu.format.arrange.childrenhorizontal")) {
+            void act(LWSelection selection) {
+            	LWContainer.layoutChildrenRow(selection);
+            }
+        };
+        
+    
+    //-------------------------------------------------------
     // Font/Text Actions
     //-------------------------------------------------------
     
@@ -2554,12 +2586,12 @@ public class Actions implements VueConstants
     }
     
     
-    public static final Action FillWidth = new ArrangeAction(VueResources.local("actions.fillwidth")) {
+    public static final Action FillWidth = new ArrangeAction(VueResources.local("actions.fillwidth"), keyStroke(KeyEvent.VK_W, ALT+SHIFT)) {
         void arrange(LWComponent c) {
             c.setFrame(minX, c.getY(), maxX - minX, c.getHeight());
         }
     };
-    public static final Action FillHeight = new ArrangeAction(VueResources.local("actions.fillheight")) {
+    public static final Action FillHeight = new ArrangeAction(VueResources.local("actions.fillheight"), keyStroke(KeyEvent.VK_H, ALT+SHIFT)) {
         void arrange(LWComponent c) {
             c.setFrame(c.getX(), minY, c.getWidth(), maxY - minY);
         }
@@ -3420,7 +3452,11 @@ public class Actions implements VueConstants
         DistributeHorizontally,
         null,
         BringToFront,
-        SendToBack
+        SendToBack,
+//jm 2011-06-18 Add menu items to support column and row child layout.
+        null,
+        layoutChildrenRow,
+        layoutChildrenColumn
     };
 
 
